@@ -5,7 +5,10 @@ namespace alexeevdv\SumSub;
 use alexeevdv\SumSub\Exception\BadResponseException;
 use alexeevdv\SumSub\Exception\TransportException;
 use alexeevdv\SumSub\Request\AccessTokenRequest;
+use alexeevdv\SumSub\Request\AddDocumentRequest;
 use alexeevdv\SumSub\Request\ApplicantDataRequest;
+use alexeevdv\SumSub\Request\ApplicantInfoSetRequest;
+use alexeevdv\SumSub\Request\ApplicantLevelSetRequest;
 use alexeevdv\SumSub\Request\ApplicantStatusRequest;
 use alexeevdv\SumSub\Request\ApplicantStatusSdkRequest;
 use alexeevdv\SumSub\Request\DocumentImagesRequest;
@@ -15,7 +18,10 @@ use alexeevdv\SumSub\Request\RequestSignerInterface;
 use alexeevdv\SumSub\Request\ResetApplicantRequest;
 use alexeevdv\SumSub\Request\ShareTokenRequest;
 use alexeevdv\SumSub\Response\AccessTokenResponse;
+use alexeevdv\SumSub\Response\AddDocumentResponse;
 use alexeevdv\SumSub\Response\ApplicantDataResponse;
+use alexeevdv\SumSub\Response\ApplicantInfoSetResponse;
+use alexeevdv\SumSub\Response\ApplicantLevelSetResponse;
 use alexeevdv\SumSub\Response\ApplicantStatusResponse;
 use alexeevdv\SumSub\Response\ApplicantStatusSdkResponse;
 use alexeevdv\SumSub\Response\DocumentImagesResponse;
@@ -27,6 +33,8 @@ use Psr\Http\Client\ClientInterface as HttpClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
+use Psr\Http\Message\StreamFactoryInterface;
+use Psr\Http\Message\StreamInterface;
 
 final class Client implements ClientInterface
 {
@@ -273,6 +281,88 @@ final class Client implements ClientInterface
         return new DocumentImagesResponse($httpResponse);
     }
 
+    /**
+     * @throws BadResponseException
+     * @throws TransportException
+     */
+    public function addDocument(AddDocumentRequest $request, StreamFactoryInterface $streamFactory): AddDocumentResponse
+    {
+        $url = sprintf(
+            '%s/resources/applicants/%s/info/idDoc',
+            $this->baseUrl,
+            $request->getApplicantId()
+        );
+
+        $metadata = json_encode($request->getMetadataAsArray());
+
+        $documentData = $request->getDocument();
+        if ($documentData instanceof StreamInterface) {
+            $documentData = (string) $documentData;
+        }
+
+        $boundary = sha1(uniqid('', true));
+
+        $requestBody = '--' . $boundary . "\r\n" .
+            'Content-Disposition: form-data; name="metadata"' . "\r\n" .
+            'Content-Length: ' . strlen($metadata) . "\r\n" .
+            "\r\n" .
+            $metadata . "\r\n";
+
+        $requestBody .= '--' . $boundary . "\r\n" .
+            'Content-Disposition: form-data; name="content"; filename=""' . "\r\n" .
+            'Content-Length: ' . strlen($documentData) . "\r\n" .
+            "\r\n" .
+            $documentData . "\r\n" .
+            '--' . $boundary . '--';
+
+        $httpRequest = $this->requestFactory->createRequest('POST', $url)
+            ->withHeader('Content-Type', sprintf('multipart/form-data; boundary="%s"', $boundary))
+            ->withHeader('X-Return-Doc-Warnings', $request->isReturnWarnings() ? 'true' : 'false')
+            ->withHeader('Accept', 'application/json')
+            ->withBody($streamFactory->createStream($requestBody));
+
+        $httpRequest = $this->requestSigner->sign($httpRequest);
+
+        $httpResponse = $this->sendApiRequest($httpRequest);
+
+        if ($httpResponse->getStatusCode() !== 200) {
+            throw new BadResponseException($httpResponse);
+        }
+
+        return new AddDocumentResponse(
+            $this->decodeResponse($httpResponse),
+            $httpResponse->getHeader("X-Image-Id")[0]
+        );
+    }
+
+    /**
+     * @throws BadResponseException
+     * @throws TransportException
+     */
+    public function setApplicantLevel(ApplicantLevelSetRequest $request): ApplicantLevelSetResponse
+    {
+        $queryParams = [
+            'name' => $request->getLevelName(),
+        ];
+
+        $url = sprintf(
+            '%s/resources/applicants/%s/moveToLevel?%s',
+            $this->baseUrl,
+            $request->getApplicantId(),
+            http_build_query($queryParams)
+        );
+
+        $httpRequest = $this->createApiRequest('POST', $url);
+        $httpResponse = $this->sendApiRequest($httpRequest);
+
+        if ($httpResponse->getStatusCode() !== 200) {
+            throw new BadResponseException($httpResponse);
+        }
+
+        return new ApplicantLevelSetResponse($this->decodeResponse($httpResponse));
+    }
+
+
     public function getInspectionChecks(InspectionChecksRequest $request): InspectionChecksResponse
     {
         $url = $this->baseUrl . '/resources/inspections/' . $request->getInspectionId() .
@@ -286,6 +376,34 @@ final class Client implements ClientInterface
         }
 
         return new InspectionChecksResponse($this->decodeResponse($httpResponse));
+    }
+
+    /**
+     * @throws BadResponseException
+     * @throws TransportException
+     */
+    public function setApplicantInfo(
+        ApplicantInfoSetRequest $request,
+        StreamFactoryInterface $streamFactory
+    ): ApplicantInfoSetResponse {
+        $url = sprintf('%s/resources/applicants/', $this->baseUrl);
+
+        $requestData = json_encode($request->asArray());
+
+        $httpRequest = $this->requestFactory->createRequest('PATCH', $url)
+            ->withHeader('Accept', 'application/json')
+            ->withHeader('Content-Type', 'application/json')
+            ->withBody($streamFactory->createStream($requestData));
+
+        $httpRequest = $this->requestSigner->sign($httpRequest);
+
+        $httpResponse = $this->sendApiRequest($httpRequest);
+
+        if ($httpResponse->getStatusCode() !== 200) {
+            throw new BadResponseException($httpResponse);
+        }
+
+        return new ApplicantInfoSetResponse($this->decodeResponse($httpResponse));
     }
 
     private function createApiRequest($method, $uri): RequestInterface

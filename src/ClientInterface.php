@@ -4,7 +4,10 @@ namespace alexeevdv\SumSub;
 
 use alexeevdv\SumSub\Exception\Exception;
 use alexeevdv\SumSub\Request\AccessTokenRequest;
+use alexeevdv\SumSub\Request\AddDocumentRequest;
 use alexeevdv\SumSub\Request\ApplicantDataRequest;
+use alexeevdv\SumSub\Request\ApplicantInfoSetRequest;
+use alexeevdv\SumSub\Request\ApplicantLevelSetRequest;
 use alexeevdv\SumSub\Request\ApplicantStatusRequest;
 use alexeevdv\SumSub\Request\ApplicantStatusSdkRequest;
 use alexeevdv\SumSub\Request\DocumentImagesRequest;
@@ -13,12 +16,16 @@ use alexeevdv\SumSub\Request\InspectionChecksRequest;
 use alexeevdv\SumSub\Request\ResetApplicantRequest;
 use alexeevdv\SumSub\Request\ShareTokenRequest;
 use alexeevdv\SumSub\Response\AccessTokenResponse;
+use alexeevdv\SumSub\Response\AddDocumentResponse;
 use alexeevdv\SumSub\Response\ApplicantStatusSdkResponse;
 use alexeevdv\SumSub\Response\ApplicantDataResponse;
+use alexeevdv\SumSub\Response\ApplicantInfoSetResponse;
+use alexeevdv\SumSub\Response\ApplicantLevelSetResponse;
 use alexeevdv\SumSub\Response\ApplicantStatusResponse;
 use alexeevdv\SumSub\Response\DocumentImagesResponse;
 use alexeevdv\SumSub\Response\InspectionChecksResponse;
 use alexeevdv\SumSub\Response\ShareTokenResponse;
+use Psr\Http\Message\StreamFactoryInterface;
 
 interface ClientInterface
 {
@@ -71,6 +78,17 @@ interface ClientInterface
     public function getDocumentImages(DocumentImagesRequest $request): DocumentImagesResponse;
 
     /**
+     * Adding an ID document
+     *
+     * @see https://developers.sumsub.com/api-reference/#adding-an-id-document
+     * @throws Exception
+     */
+    public function addDocument(
+        AddDocumentRequest $request,
+        StreamFactoryInterface $streamFactory
+    ): AddDocumentResponse;
+
+    /**
      * Get inspection checks
      *
      * @throws Exception
@@ -92,4 +110,24 @@ interface ClientInterface
      * @throws Exception
      */
     public function importApplicant(ImportApplicantRequest $request): ApplicantDataResponse;
+
+    /**
+     * Changing required document set (level)
+     *
+     * @see    https://developers.sumsub.com/api-reference/#changing-required-document-set-level
+     * @throws Exception
+     */
+    public function setApplicantLevel(ApplicantLevelSetRequest $request): ApplicantLevelSetResponse;
+
+
+    /**
+     * Changing top-level info
+     *
+     * @see https://developers.sumsub.com/api-reference/#changing-top-level-info
+     * @throws Exception
+     */
+    public function setApplicantInfo(
+        ApplicantInfoSetRequest $request,
+        StreamFactoryInterface $streamFactory
+    ): ApplicantInfoSetResponse;
 }

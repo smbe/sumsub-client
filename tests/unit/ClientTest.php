@@ -6,7 +6,10 @@ use alexeevdv\SumSub\Client;
 use alexeevdv\SumSub\Exception\BadResponseException;
 use alexeevdv\SumSub\Exception\TransportException;
 use alexeevdv\SumSub\Request\AccessTokenRequest;
+use alexeevdv\SumSub\Request\AddDocumentRequest;
 use alexeevdv\SumSub\Request\ApplicantDataRequest;
+use alexeevdv\SumSub\Request\ApplicantInfoSetRequest;
+use alexeevdv\SumSub\Request\ApplicantLevelSetRequest;
 use alexeevdv\SumSub\Request\ApplicantStatusRequest;
 use alexeevdv\SumSub\Request\ApplicantStatusSdkRequest;
 use alexeevdv\SumSub\Request\DocumentImagesRequest;
@@ -18,11 +21,15 @@ use Codeception\Stub\Expected;
 use Codeception\Test\Unit;
 use GuzzleHttp\Psr7\Request;
 use GuzzleHttp\Psr7\Response;
+use GuzzleHttp\Psr7\Stream;
+use GuzzleHttp\Psr7\Utils;
 use Psr\Http\Client\ClientExceptionInterface;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
+use Psr\Http\Message\StreamFactoryInterface;
+use Psr\Http\Message\StreamInterface;
 
 final class ClientTest extends Unit
 {
@@ -496,6 +503,83 @@ final class ClientTest extends Unit
         $client->getDocumentImages(new DocumentImagesRequest('123456', '654321'));
     }
 
+
+
+    public function testAddDocument(): void
+    {
+        /** @var ClientInterface $httpClient */
+        $httpClient = $this->makeEmpty(ClientInterface::class, [
+            'sendRequest' => Expected::once(static function (RequestInterface $request): ResponseInterface {
+                self::assertSame('/resources/applicants/123123/info/idDoc', $request->getUri()->getPath());
+                self::assertSame('', $request->getUri()->getQuery());
+                
+                return new Response(200, [
+                    'Content-Type' => 'text/plain',
+                    'X-Image-Id' => '4321',
+                ], '{"idDocType": "DOCTYPE", "country": "CNT"}');
+            }),
+        ]);
+
+        $client = new Client($httpClient, $this->getRequestFactory(), $this->getRequestSigner());
+
+        $addDocumentResult = $client->AddDocument(new AddDocumentRequest(
+            'document',
+            '123123',
+            'DOCTYPE',
+            'CNT', 
+            false
+        ), $this->getStreamFactory());
+
+        self::assertSame(["idDocType" => "DOCTYPE",  "country" => "CNT"], $addDocumentResult->asArray());
+        self::assertSame('4321', $addDocumentResult->documentId());
+    }
+
+    public function testSetApplicantLevel(): void
+    {
+        /** @var ClientInterface $httpClient */
+        $httpClient = $this->makeEmpty(ClientInterface::class, [
+            'sendRequest' => Expected::once(static function (RequestInterface $request): ResponseInterface {
+                self::assertSame('/resources/applicants/123/moveToLevel', $request->getUri()->getPath());
+                self::assertSame('name=level123', $request->getUri()->getQuery());
+
+                return new Response(200, [], json_encode(['arr' => 'res']));
+            }),
+        ]);
+        $client = new Client($httpClient, $this->getRequestFactory(), $this->getRequestSigner());
+        $applicantDataResponse = $client->setApplicantLevel(new ApplicantLevelSetRequest('123','level123'));
+        self::assertSame(['arr' => 'res'], $applicantDataResponse->asArray());
+    }
+
+
+    public function testSetApplicantInfo(): void
+    {
+        /** @var ClientInterface $httpClient */
+        $httpClient = $this->makeEmpty(ClientInterface::class, [
+            'sendRequest' => Expected::once(static function (RequestInterface $request): ResponseInterface {
+                self::assertSame('/resources/applicants/', $request->getUri()->getPath());
+                self::assertSame('', $request->getUri()->getQuery());
+                self::assertSame(
+                    '{"id":"123456","phone":"111222333","questionnaires":[{"id":"1"},{"id":"2"}],"deleted":true}', 
+                    (string) $request->getBody()
+                );
+
+                return new Response(200, [], json_encode(['a' => 'b']));
+            }),
+        ]);
+        $client = new Client($httpClient, $this->getRequestFactory(), $this->getRequestSigner());
+
+        $request = new ApplicantInfoSetRequest('123456');
+        $request->setPhone('111222333');
+        $request->setQuestionnaires([
+            0 => ['id' => '1'],
+            1 => ['id' => '2']
+        ]);
+        $request->setDeleted(true);
+
+        $applicantInfoResponse = $client->setApplicantInfo($request, $this->getStreamFactory());
+        self::assertSame(['a' => 'b'], $applicantInfoResponse->asArray());
+    }
+
     private function getRequestSigner(): RequestSignerInterface
     {
         /** @var RequestSignerInterface $signer */
@@ -517,4 +601,17 @@ final class ClientTest extends Unit
         ]);
         return $factory;
     }
+
+    private function getStreamFactory(): StreamFactoryInterface
+    {
+        /** @var StreamFactoryInterface $factory */
+        
+        $factory = $this->makeEmpty(StreamFactoryInterface::class, [
+            'createStream' => static function (string $content): StreamInterface {
+                return Utils::streamFor($content);
+            },
+        ]);
+        return $factory;
+    }
+
 }
